@@ -1,0 +1,445 @@
+\documentclass{article}
+\usepackage{amsfonts}
+\usepackage{amsmath}
+
+\begin{document}
+\SweaveOpts{concordance=TRUE}
+
+\author{Cordula Eggerth (00750881)}
+\title{Finding the Right Distribution for Highly
+Skewed Zero-Inflated Clinical Data}
+\maketitle
+
+\section{Introduction}
+The paper illustrates the case of count data with a high number of zeroes and provides options to deal with the situation when it comes to statistical modeling. In this particular case, the underlying data stems from a clinical study on children with an electrophysiological (EP) disorder. For the majority of these children no surgical intervention was necessary in line with the treatment of the EP disorder. \\
+The study aims to provide insights on how to address the mentioned data situation and on how to analyze the data in a way that the estimation and inference results are appropriate (i.e. unbiased and reflecting the true distribution of the data). For this reason, several statistical models, namely Poisson model, Negative Binomial model, as well as the respective Zero-Inflated models were fitted and applied in order to find the best fitting model among them. 
+
+\section{Data}
+\subsection{Data Simulation}
+The study comprises 286 children with their age ranging from 8 to 18 years. The number of female and male participants was approximately the same. Four clinical variables were used to statistically model the dependent count variable, which refers to the count of hospital stays caused by the EP disorder:
+\begin{itemize}
+ \item \textbf{Heart-related Hospitalization:} binary variable to model how often a child was hospitalized per year                                                to the EP disorder
+       \begin{itemize}
+          \item \textbf{0:} 2 or fewer hospital stays annually 
+          \item \textbf{1:} more than 2 hospital stays annually 
+       \end{itemize}
+ \item \textbf{Heart Block:} binary variable to model whether heart activity is drastically reduced
+       \begin{itemize}
+          \item \textbf{0:} no heart block 
+          \item \textbf{1:} heart block 
+       \end{itemize}
+ \item \textbf{Prematurity:} binary variable to model whether the child was born prior to the 37th week of the                                   pregnancy
+       \begin{itemize}
+          \item \textbf{0:} child born in or after the 37th week of the pregnancy 
+          \item \textbf{1:} child born prior to the 37th week of the pregnancy 
+       \end{itemize}
+ \item \textbf{Time:} continuous variable to model the time passed since the last hospital stay (measured in months)
+         
+\end{itemize}
+The dependent count variable is simulated using with the help of random numbers stemming from a poisson distribution and extra zeroes are added. The binary variables are simulated using a binomial distribution with n of 1, size of 1 and a 50 percent probability. The continuous time variable is simulated using a negative binomial distribution.     
+\\ \\
+
+\textbf{Exemplary simulation data entries:}
+<<echo=FALSE>>=
+### SIMULATION ###
+
+### ------------------ ----- ###
+### study participants       ###
+### ------------------------ ###
+n <- 286
+
+### ------------------------ ###
+### dependent count variable ###
+### ------------------------ ###
+set.seed(153)
+y_count <- rpois(n,lambda=1)
+ 
+ # set extra zeroes
+y_which_is1 <- which(y_count==1) 
+length_y_which_is1 <- length(y_which_is1)
+y_which_is1_toSetTo0 <- y_which_is1[1:round((length_y_which_is1/3), digits=0)]
+y_count[y_which_is1_toSetTo0] <- 0
+
+y_which_isGreater1 <- which(y_count>1) 
+length_y_which_isGreater1 <- length(y_which_isGreater1)
+y_which_isGreater1_toSetTo0 <- y_which_isGreater1[1:round((length_y_which_isGreater1/2), digits=0)]
+y_count[y_which_isGreater1_toSetTo0] <- 0
+
+### ------------------------ ###
+### regressors               ###
+### ------------------------ ###
+
+# REGRESSOR 1: "hospitalization" 
+#              0 ... <=2 hospital stays per year
+#              1 ... >2 hospital stays per year
+set.seed(27895)
+hospitalization <- rbinom(n=n, size=1, prob=0.5)
+
+# REGRESSOR 2: "heartblock"
+#              0 ... no heart block
+#              1 ... heart block 
+set.seed(1890)
+heartblock <- rbinom(n=n, size=1, prob=0.4)
+
+# REGRESSOR 3: "prematurity"
+#              0 ... born prior to 37th week of pregnancy 
+#              1 ... born in or after 37th week of pregnancy
+set.seed(33)
+prematurity <- rbinom(n=n, size=1, prob=0.3)
+
+# REGRESSOR 4: "time" 
+#              continuous variable ... months passed since last hospital stay
+set.seed(5)
+time <- rnbinom(n=n, size=24, mu=12)
+
+
+### ------------------------ ###
+### simulated data           ###
+### ------------------------ ###
+
+# create data.frame of simulated data
+sim_data <- data.frame(y_count=y_count, hospitalization=hospitalization,
+                       heartblock=heartblock, prematurity=prematurity,
+                       time=time)
+
+# show 15 exemplary data.frame entries
+sim_data[(nrow(sim_data)-15):nrow(sim_data), ]
+
+@ 
+   
+\subsection{Descriptive Statistics}
+This sub-chapter presents the descriptive statistics based on the simulated data. 
+From the histogram below it can be seen that the distribution of the number of hospitalization events that occurred is highly skewed to the occurrence of zero as a count result. 
+
+<<chunk1,fig=TRUE,echo=FALSE>>=
+hist(sim_data$y_count, main="Histogram of Count Data",
+     xlab="Count", border="dimgrey", col="cornsilk2", breaks=5)
+@
+
+
+\section{Statistical Models}
+
+\subsection{Distributions}
+Due to the fact that there are highly skewed, zero-inflated count data, a normal linear regression would not be appropriate because it could produce negative predicted values (which is theoretically impossible in this case). \\
+Therefore, a Poisson regression model or one of its variants or at least a model that takes these circumstances into account is used. However, this model assumes that the mean and the variance are equal. In practice, the variance appears to be often larger than the mean. Thus, the negative binomial model might constitute an appropriate alternative that can handle the extra variance via a dispersion parameter. \\
+In some cases, there are more zeroes than Poisson or Negative Binomial distribution would predict. Consequently, a Zero-Inflated Poisson (ZIP) or Zero-Inflated Negative Binomial (ZINB) model would be a better choice \\ 
+\\The probability distribution of Poisson distribution is given by:\ 
+\begin{align*}
+    P(y_i \mid X=x) = \frac{e^{-\mu} \cdot \mu^y_i}{y_i!};\ y_i = 0,1,2,...
+    \\ with\ \mu = e^{x'\beta}
+\end{align*}
+where x denotes the covariates; and $\beta$ denotes the vector of coefficients that need to be estimated.\\ 
+\\The probability distribution of Negative Binomial distribution is given by:\ 
+\begin{align*}
+  P(y_i \mid \mu,\alpha) = \frac{\Gamma(y_i+\frac{1}{\alpha})}{\Gamma(y_i+1)\Gamma(\frac{1}{\alpha})}(\frac{1}{1+\alpha\mu})^{\frac{1}{\alpha}}(\frac{\mu}{\frac{1}{\alpha}+\mu})^{y_i}
+\end{align*}
+where $\alpha$ is the dispersion parameter.\\ 
+\\The probability density function of the Zero-inflated Poisson is given by: \ 
+\begin{align*}
+    Pr(Y_i = 0) = \pi_i + (1-\pi_i)e^{-\mu_i}
+    \\Pr(Y_i = y_i) = (1-\pi_i)\frac{e^{-\mu_i}\mu^{y_i}_i}{y_i!};\ y_i = 1,2,....
+    \\where\ \pi_i = \frac{e^{z_i'\gamma}}{1+e^{z_i'\gamma}};\ \mu_i = e^{x'\beta}
+\end{align*}\\ 
+\\The probability density function of the Zero-inflated Negative Binomial is given by: \ 
+\begin{align*}
+    Pr(Y_i = 0) =  \pi_i + (1-\pi_i)(1+\alpha\mu_i)^{-\frac{1}{\alpha}}
+    \\ Pr(Y_i = y_i) = (1-\pi_i)\frac{\Gamma(y_i + \frac{1}{\alpha})}{y_i!\Gamma(\frac{1}{\alpha})}(\frac{\frac{1}{\alpha}}{\frac{1}{\alpha}+\mu_i})^{\frac{1}{\alpha}}(\frac{\mu_i}{\frac{1}{\alpha}+\mu_i})^{y_i};\ y_i = 1,2,...
+\end{align*}
+\\ \\
+After simulating the data, these four types of models were used to evaluate model fit.\\
+
+\subsection{Underlying data structure and model selection}
+In this case, the dependent count variable is the number of surgeries (metric), the explanatory variables are: time (metric), heartblock (nominal), hospitalization (categorical) and prematurity (nominal). Moreover, an interaction between heartblock and prematurity is present. \\ \\
+To evaluate the models and to determine the most appropriate model, some assessment criteria such as Akaike Information Criterion (AIC) or the Vuong test.\\
+First of all, the four models discussed previously were applied to the clinical data. Afterwards, a Poissonness plot was generated to determine if the data were likely to have come from a Poisson distribution while a Lagrange multiplier (LM) test was used to check for model over-dispersion. Under $H_0$ of the Poisson model with no overdispersion, the limiting distribution of the LM statistic would follow a $\chi_1$ distribution. Furthermore, Van den Broek score tests were used to formally test for zero inflation in the data. Its statistic is based on a comparison of actual zeros to those predicted by the model to test for zero-inflation relative to a Poisson distribution. Under $H_0$, i.e. the case of no zero-inflation, the test follows a $\chi_1$ distribution.\\
+Each of the four models was compared using log-likelihood estimates as a measure of model performance. In addition, the Vuong test statistic was used to compare non-nested models (e.g. Poisson versus Zero-Inflated Poisson).\\
+Model fit was examined by comparing the Akaike information criterion (AIC) of the models under concern. \\ \\
+\textbf{Model output using Poisson family}
+
+<<echo=FALSE>>=
+#install.packages("pscl")
+#install.packages("MASS")
+require(MASS); require(pscl)
+library(MASS); library(pscl)
+
+pois <- glm(y_count~hospitalization+time+heartblock+prematurity+heartblock*prematurity, data = sim_data, family = "poisson")
+summary(pois)
+
+@
+
+\textbf{Model output using Negative Binomial family}
+
+<<echo=FALSE>>=
+#install.packages("pscl")
+#install.packages("MASS")
+require(MASS); require(pscl)
+library(MASS); library(pscl)
+
+nb <- glm.nb(y_count~hospitalization+time+heartblock+prematurity+heartblock*prematurity, data = sim_data)
+summary(nb)
+
+@
+
+\textbf{Model output using Zero-Inflated Poisson}
+
+<<echo=FALSE>>=
+#install.packages("pscl")
+#install.packages("MASS")
+require(MASS); require(pscl)
+library(MASS); library(pscl)
+
+zip <- zeroinfl(y_count~hospitalization+time+heartblock+prematurity+heartblock*prematurity, data = sim_data, dist = "poisson")
+summary(zip)
+
+@
+
+
+\textbf{Model output using Zero-Inflated Negative Binomial}
+
+<<echo=FALSE>>=
+#install.packages("pscl")
+#install.packages("MASS")
+require(MASS); require(pscl)
+library(MASS); library(pscl)
+
+zinb <- zeroinfl(y_count~hospitalization+time+heartblock+prematurity+heartblock*prematurity, data = sim_data, dist = "negbin")
+summary(zinb)
+
+@
+
+
+\section{Discussion}
+For the purpose of discussing the results of the simulated study, a seed was set for the respective random number generation in the data simulation section to make the results and their interpretation reproducible. \\
+Four models, namely the Poisson model, the Negative Binomial model as well as their zero-inflated counterparts were fitted in order to provide a basis for deciding on the best fitting model for the underlying data and situation. All four models comprised the same covariates, which means that in each model the count variable (regarding hospitalization events) is to be explained by the regressors hospitalization, time, heartblock, prematurity and the interaction between heartblock and prematurity. \\
+When it comes to the standard Poisson model assuming that the expected value equals the mean of the distribution, which was fitted using the glm function, the intercept was significant on the 99 percent level. The variable prematurity was significant on the 95 percent level. The interaction between heartblock and prematurity was significant on the 99 percent level. The AIC of the Poisson model was 591.44. \\
+To fit the Negative Binomial model, the glm.nb function was used. This model took a dispersion parameter into account in order to relax the assumption of equality of the mean and expected value of the underlying distribution. In this scenario, the intercept appeared to be significant on the 99 perecent level and the interaction term on the 95 percent level. There was also a significance on the 90 percent level for the variable of prematurity. The AIC of the Negative Binomial model was 581.31, which means that the error was slightly more favorable than in the standard Poisson model. \\
+With regard to the Zero-Inflated Poisson (ZIP) model, among the count model coefficients, which were determined based on a Poisson distribution with log link, none of the coefficients were significant. Among the zero-inflation model coefficients, which were determined based on a Binomial distribution with logit link, the hospitalization variable was significant on the 95 percent level. The remaining coefficients were not significant. The log-likelihood (LL) of the model was -278 on 12 degrees of freedom. \\
+Finally, the Zero-Inflated Negative Binomial (ZINB) model was fitted for the coefficients and interaction term named above. Using the ZINB model, none of the coefficients were significant for the count model portion (based on a Negative Binomial distribution with log link). Among the coefficients of the zero-inflation part (based on a Binomial distribution with logit link), the variable of hospitalization was significant on the 95 percent level. The LL of the model was -278 on 13 degrees of freedom. \\ \\
+The below output depicts the coefficient estimates for the Poisson, the NB model and for the count parts of the zero-inflated models as well as the respective deviance. Additionally, the dispersion parameter is 22268.15 for the ZINB model and 1.43 for the Negative Binomial model. \\ 
+The log-likelihood and the AIC, which are both presented below, served as criteria to compare the four models. In terms of LL, the models appear to be fitting better to the data when moving from Poisson and Negative Binomial to the Zero-Inflated models. In fact, when we merely take LL into account, the ZIP model appears to be the most favorable in view of the underlying data (closely followed by the ZINB model). Regarding the AIC, again the ZIP is the best model and is followed closely by the ZINB model. The Poisson and Negative Binomial model have both a higher AIC, which indicates they do not fit the data so well as the other proposed models do. 
+
+<<echo=FALSE>>=
+require(stats)
+
+Estimate <- cbind(pois$coefficients,nb$coefficients,zip$coefficients$count,
+                  zinb$coefficients$count)
+colnames(Estimate) <- c("Poisson", "NB", "ZIP-count","ZINB-count")
+
+Deviance <- rbind(cbind(pois$null.deviance, pois$df.null, pois$deviance, pois$df.residual), 
+                  cbind(nb$null.deviance,nb$df.null,nb$deviance,nb$df.residual))
+colnames(Deviance) <- c("Null deviance","DF Null","Residual deviance","DF Residuals")
+rownames(Deviance) <- c("Poisson","NB")
+
+teststatistik <- cbind(rbind(logLik(pois),pois$aic,NA), rbind(logLik(nb),nb$aic,nb$theta),
+                  rbind(logLik(zip),AIC(zip),NA), rbind(logLik(zinb),AIC(zinb),zinb$theta))
+colnames(teststatistik) <- c("Poisson", "NB", "ZIP", "ZINB")
+rownames(teststatistik) <- c("Log_likelihood", "AIC","Dispersion_param")
+
+Summary <- list("Estimate"=Estimate, "Deviance"= Deviance, "Teststatistik" = teststatistik)
+Summary_round <- lapply(Summary, round, 4)
+
+print(Summary_round)
+@
+
+
+Furthermore, the data can be analyzed by the means of a Vuong test. The \textbf{Vuong test} intends to compare 2 statistical models referring to the exact same dataset with the help of the maximum-likelihood (ML) theory. In this statistical test, the $H_0$ assumes that the statistical models under concern fit the observed data equally well, whereas the $H_1$ assumes the contrary. Regarding the models, they do not need to be nested models and do not have to be specified in a certain way. In line with the Vuong test, the Kullback-Leibler divergence (KLD) is used to measure the deviance between the true model and the one created from the data ($g_t$). The $H_0$ of the Vuong test is stated as:
+\begin{align*}
+    H_0: D_{KL}(g_t \mid\mid g_1) = D_{KL}(g_t \mid\mid g_2)
+\end{align*}
+The Vuong test is commonly used in scenarios of zero inflation or suspected zero inflation. It tests if the observed difference between the LL contribution to the zero-inflation model and to the standard count model is (on average) larger than 0. Under these circumstances, the test statistic of the Vuong test can be stated as: 
+\begin{align*}
+    Vuong = (s_{dl}\sqrt{n})^{-1}\sum_{i=1}^{n}dl_i\\
+    dl_i = ln(l(y_i \mid x_i,z_i,\hat{\beta},\hat{\gamma})) - ln(f(y_i \mid x_i'\tilde{\beta})),
+\end{align*}
+whereby $\hat{\beta}$ is the estimated $\beta$ in the zero-inflated model,$\tilde{\beta}$ the estimated $\beta$ if the zero-inflation component is not contained in the model.
+Moreover, dl is a vector of length N, such that the ith element is the ith individual log-likelihood difference, and $s_{dl}$ is the standard deviation of dl. 
+Under $H_0$, the Vuong test statistic is asymptotically normally distributed in view of the central limit theorem (CLT).\\
+
+The below output shows the results of the Vuong test for the underlying simulation data. As already pointed out in the course of the model evaluation based on LL and AIC above, the results of the Vuong test also point into the direction of the zero-inflated models when it come to choosing on of the analyzed models. In this analysis, the Poisson model was compared with the ZIP model and the Negative Binomial model with the ZINB model. Thus, the standard models were compared with their zero-inflated counterparts respectively. 
+
+<<echo=FALSE>>=
+vuong(pois, zip)
+@
+
+<<echo=FALSE>>=
+vuong(nb,zinb)
+@
+
+The \textbf{Poissonness Plot} serves to explore whether the simulation data actually corresponds to a Poisson distribution. In this study, the simulated data deviates from a standard Poisson distribution as it can be seen from the below plot that the points are not located on the line. 
+
+<<chunk4,fig=TRUE,echo=FALSE>>=
+#install.packages("vcd")
+library(vcd)
+distplot(sim_data$y_count, "poisson")
+@ 
+
+ 
+Furthermore, the \textbf{Van den Broek Score Test} was applied to the simulated data. This test has the null hypothesis that no zero inflation is prevalent in the data. Its test statistic is distributed with a Chi-Squared distribution with one degree of freedom. The testing procedure compares the actual number of observed zeroes with the number of zeroes that would theoretically predicted by the model by the means of log-likelihood estimates. Since the p-value of the test statistic is significant, the null hypothesis (of no zero inflation) is rejected. 
+
+<<echo=FALSE>>=
+#install.packages("vcdExtra")
+library(vcdExtra)
+zero.test(sim_data$y_count)
+@ 
+
+ 
+\section{Appendix}
+
+
+<<echo=TRUE>>=
+### SIMULATION ###
+set.seed(2345)
+
+### ------------------ ----- ###
+### study participants       ###
+### ------------------------ ###
+n <- 286
+
+### ------------------------ ###
+### dependent count variable ###
+### ------------------------ ###
+set.seed(153)
+y_count <- rpois(n,lambda=1)
+ 
+ # set extra zeroes
+y_which_is1 <- which(y_count==1) 
+length_y_which_is1 <- length(y_which_is1)
+y_which_is1_toSetTo0 <- y_which_is1[1:round((length_y_which_is1/3), digits=0)]
+y_count[y_which_is1_toSetTo0] <- 0
+
+y_which_isGreater1 <- which(y_count>1) 
+length_y_which_isGreater1 <- length(y_which_isGreater1)
+y_which_isGreater1_toSetTo0 <- y_which_isGreater1[1:round((length_y_which_isGreater1/2), 
+                                                          digits=0)]
+y_count[y_which_isGreater1_toSetTo0] <- 0
+
+### ------------------------ ###
+### regressors               ###
+### ------------------------ ###
+
+# REGRESSOR 1: "hospitalization" 
+#              0 ... <=2 hospital stays per year
+#              1 ... >2 hospital stays per year
+set.seed(27895)
+hospitalization <- rbinom(n=n, size=1, prob=0.5)
+
+# REGRESSOR 2: "heartblock"
+#              0 ... no heart block
+#              1 ... heart block 
+set.seed(1890)
+heartblock <- rbinom(n=n, size=1, prob=0.4)
+
+# REGRESSOR 3: "prematurity"
+#              0 ... born prior to 37th week of pregnancy 
+#              1 ... born in or after 37th week of pregnancy
+set.seed(33)
+prematurity <- rbinom(n=n, size=1, prob=0.3)
+
+# REGRESSOR 4: "time" 
+#              continuous variable ... months passed since last hospital stay
+set.seed(5)
+time <- rnbinom(n=n, size=24, mu=12)
+
+
+### ------------------------ ###
+### simulated data           ###
+### ------------------------ ###
+
+# create data.frame of simulated data
+sim_data <- data.frame(y_count=y_count, hospitalization=hospitalization,
+                       heartblock=heartblock, prematurity=prematurity,
+                       time=time)
+
+# show 15 exemplary data.frame entries
+sim_data[(nrow(sim_data)-15):nrow(sim_data), ]
+
+
+
+### ------------------------ ###
+### statistical models       ###
+### ------------------------ ###
+
+library(MASS)
+library(pscl)
+
+pois <- glm(y_count ~hospitalization +heartblock +prematurity +time
+            +heartblock*prematurity, data = sim_data, family = poisson)
+summary(pois)
+
+nb <- glm.nb(y_count ~hospitalization +heartblock +prematurity +time
+             +heartblock*prematurity, data = sim_data)
+summary(nb)
+
+zip<- zeroinfl(y_count ~hospitalization +heartblock +prematurity +time
+               +heartblock*prematurity, data = sim_data, dist = "poisson")
+summary(zip)
+
+zinb <- zeroinfl(y_count ~hospitalization +heartblock +prematurity +time
+                 +heartblock*prematurity, data = sim_data, dist = "negbin")
+summary(zinb)
+
+
+### ------------------------ ###
+### Results                  ###
+### ------------------------ ###
+
+library(stats)
+
+Estimate <- cbind(pois$coefficients,nb$coefficients,zip$coefficients$count,
+                  zinb$coefficients$count)
+colnames(Estimate) <- c("Poisson", "NB", "ZIP-count","ZINB-count")
+
+Deviance <- rbind(cbind(pois$null.deviance, pois$df.null, 
+                        pois$deviance, pois$df.residual), 
+                  cbind(nb$null.deviance,nb$df.null,
+                        nb$deviance,nb$df.residual))
+colnames(Deviance) <- c("Null_dev","DF_Null","Residual_dev","DF_Residuals")
+rownames(Deviance) <- c("Poisson","NB")
+
+teststatistik <- cbind(rbind(logLik(pois),pois$aic,NA), 
+                       rbind(logLik(nb),nb$aic,nb$theta),
+                       rbind(logLik(zip),AIC(zip),NA), 
+                       rbind(logLik(zinb),AIC(zinb),zinb$theta))
+colnames(teststatistik) <- c("Poisson", "NB", "ZIP", "ZINB")
+rownames(teststatistik) <- c("Log_likelihood", "AIC","Dispersion_param")
+
+
+Summary <- list("Estimate"=Estimate, "Deviance"= Deviance, 
+                "Teststatistik" = teststatistik)
+Summary_round <- lapply(Summary, round, 4)
+
+print(Summary_round)
+
+
+
+### ------------------------ ###
+### vuong test               ###
+### ------------------------ ###
+
+vuong(pois, zip)
+vuong(nb, zinb)
+
+### ------------------------ ###
+### poissoness plot          ###
+### ------------------------ ###
+
+library(vcd)
+distplot(sim_data$y_count, "poisson")
+
+
+### ------------------------ ###
+### van den broek score test ###
+### ------------------------ ###
+#install.packages("vcdExtra")
+library(vcdExtra)
+zero.test(sim_data$y_count)
+@
+
+
+\section{Bibliography}
+The following source was used as a basis for the whole report: \\ \\
+Gupta, R., et al. 2013. "Finding the Right Distribution for Highly Skewed Zero-Inflated Clinical Data." In \textit{Epidemiology Biostatistics and Public Health}. Vol. 10 No. 1, S. e8732-1 - e8732-15.
+
+
+\end{document}
+
